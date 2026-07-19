@@ -1,244 +1,124 @@
-<p align="center">
-  <img src="./Banner.png" alt="Predictive Maintenance in Oil & Gas" width="100%">
-</p>
+# ForgeFlow
 
+A manufacturing data platform on AWS, built to demonstrate how project-based fabrication
+data — pressure vessel and structural steel jobs — becomes AI-ready across a Bronze →
+Silver → Gold lakehouse, at zero infrastructure cost.
 
-# 🔧 **AI-Driven Predictive Maintenance for Oil & Gas | Remaining Useful Life (RUL) Estimation**
+Built in public. Data is synthetic and anonymized; no client names, real project data,
+or proprietary information appears anywhere in this repo (see [Anonymization](#anonymization)).
 
-A full end-to-end **machine learning system** for predicting Remaining Useful Life (RUL) in rotating equipment used in the **oil & gas industry**.  
-This project features:
+## The problem
 
-✔️ Feature-engineered turbomachinery sensor dataset  
-✔️ XGBoost & Neural Network regression models  
-✔️ Ensemble RUL prediction  
-✔️ Production-ready **FastAPI inference server**  
-✔️ **Streamlit UI** for business-friendly visualization  
-✔️ Clean modular project structure suitable for real deployment
+Fabricators running pressure-vessel (PED) and structural-steel (SSD) work don't run
+continuous production lines — they run discrete, contract-based jobs, each with its own
+material procurement, stage-by-stage fabrication sequence, QC gates, and delivery
+commitment. That data model doesn't fit off-the-shelf manufacturing analytics templates,
+which mostly assume continuous-line production.
 
----
+ForgeFlow models the job-based reality directly: every dataset is keyed on `job_id`,
+from contract award through final site inspection, so the questions that actually matter —
+which jobs are trending late, which delay reason codes recur, which inspection types
+catch the most defects — are answerable with a join, not a workaround.
 
-# 📘 **1. Executive Summary**
-
-Rotating equipment failures (pumps, compressors, turbines) are a major source of unplanned downtime in the energy sector.  
-Traditional maintenance strategies—reactive or fixed-interval—often lead to:
-
-- Costly shutdowns  
-- Equipment over-maintenance  
-- Safety and environmental risks
-
-This project provides an **AI-powered predictive maintenance solution** that estimates RUL from vibration, thermal, acoustic, and derived sensor indicators.
-
-📌 **Business Value**  
-- Reduce unplanned downtime  
-- Improve maintenance planning  
-- Optimize asset integrity & operational efficiency  
-- Enable data-driven reliability engineering
-
----
-
-# 📂 **2. Project Architecture**
+## Architecture
 
 ```
-asset-integrity-predictive-maintenance/
-│
-├── data/                          → Raw NASA C-MAPSS dataset (not committed)
-│   ├── train_FD001.txt
-│   ├── test_FD001.txt
-│   └── RUL_FD001.txt
-│
-├── notebooks/
-│   ├── EDA_clean.ipynb            → Exploratory data analysis
-│   └── Modeling_clean_fixed.ipynb → Feature engineering & model training
-│
-├── models/                        → API-ready models & inference artifacts
-│   ├── xgb_model.pkl
-│   ├── neural_network_rul.keras
-│   ├── linear_regression.pkl
-│   ├── minmax_scaler.pkl
-│   └── feature_names.json
-│
-├── scripts/
-│   ├── train_xgboost.py           → XGBoost training pipeline
-│   ├── train_lstm.py              → LSTM model training
-│   └── utils.py                   → Shared preprocessing utilities
-│
-├── Streamlit_app/
-│   └── app.py                     → Streamlit frontend UI
-│
-├── rul_api.py                     → FastAPI inference backend
-├── README.md                      → Project documentation
-├── requirements.txt               → Python dependencies
-├── .gitignore
-└── Banner.png                     → Repository header graphic
-
+Python generator  →  S3 Bronze (JSON, partitioned by dt=award_date)
+                          ↓
+                    Glue Crawler → Glue Data Catalog
+                          ↓
+                    Athena (ad-hoc query, data-quality checks)
+                          ↓
+                    dbt (Silver: typed/validated/deduplicated)
+                          ↓
+                    dbt (Gold: on-time delivery rate, defect rate by
+                         inspection type, material-delay-to-slip correlation)
+                          ↓
+                    Athena (BI-ready, dashboard queries)
 ```
 
----
+Five datasets, all keyed on `job_id`:
 
-# 🧠 **3. Machine Learning Workflow**
+| Dataset | Grain | Purpose |
+|---|---|---|
+| `projects` | 1 row / job | Job master: division, type, code standard, award/target delivery dates |
+| `material_tracking` | 1 row / material event | PO issued → transit → received → issued-to-fab, planned vs actual |
+| `fabrication_stages` | 1 row / stage | Division-specific stage sequence with planned/actual dates |
+| `qc_inspections` | 1 row / inspection | Inspection events gated to specific stages, result, defect code |
+| `delivery_variance` | 1 row / job | Planned vs actual ship date, variance, root-cause reason code |
 
-### **3.1 Data Processing**
-- Missing-value handling  
-- Scaling & normalization  
-- Rolling statistics (mean, std)  
-- Trend-based degradation features  
+## Key decisions
 
-### **3.2 Modeling**
-| Model | Description |
-|-------|-------------|
-| **XGBoost Regressor** | High-performance baseline model |
-| **Deep Neural Network (.keras)** | Learns complex non-linear degradation patterns |
-| **Ensemble (Average)** | Improves robustness & reduces variance |
+**No Kinesis, no Redshift.** The original design used Kinesis for streaming ingestion and
+Redshift for the warehouse layer. Neither is available on AWS's free tier, and running
+them continuously isn't justified for a synthetic dataset at this scale. Replaced with a
+Python batch simulator writing directly to S3, and Athena as the query engine — a
+genuinely zero-cost architecture that still exercises the same partitioning, crawling,
+and analytical-query patterns a streaming setup would.
 
-### **3.3 Evaluation Metrics**
-- MAE (Mean Absolute Error)  
-- RMSE (Root Mean Squared Error)  
+**Job-based, not continuous-line.** Most public manufacturing datasets model continuous
+production. Real fabrication shops — especially PED/SSD divisions — run project-based
+jobs. Modeling that correctly (variable stage sequences per division, subcontracted
+ancillary items, job-level delivery variance) is the actual differentiator here.
 
-> The ensemble model delivered the most stable predictions across failure cycles.
+**Synthetic data, not a demo toy.** The generator produces internally consistent,
+realistic data: material delays that cascade into stage delays, QC failures that gate
+downstream stages, delay reason codes that correlate with the actual cause. It's built
+to survive real data-quality checks (see [Build log](#build-log)), not just to have
+rows in a table.
 
----
+## How to run
 
-# 🚀 **4. Production-Ready Inference API (FastAPI)**
-
-The backend provides programmatic RUL predictions for any input sensor vector.
-
-### Run the API  
 ```bash
-uvicorn rul_api:app --reload
-```
-
-### API Documentation  
-Open your browser:  
-👉 **http://127.0.0.1:8000/docs**
-
-You’ll see:
-- Interactive Swagger UI  
-- POST `/predict_rul` that returns:  
-```json
-{
-  "xgb_rul": 133.83,
-  "nn_rul": 127.55,
-  "ensemble_rul": 130.69
-}
-```
-
----
-
-# 🖥️ **5. User Interface (Streamlit)**
-
-A clean, interactive dashboard for non-technical users (engineers, reliability managers).
-
-### Launch Streamlit UI  
-```bash
-streamlit run Streamlit_app/app.py
-```
-
-### Features:
-- Sidebar with 153 sensor inputs  
-- API request status & prediction visualization  
-- XGBoost, Neural Net, and Ensemble comparison  
-- Expandable raw JSON outputs  
-
-Perfect for **presentations, interviews, and industrial demos**.
-
----
-
-# 📊 **6. Dataset**
-
-- **Source:** NASA C-MAPSS Turbofan Degradation dataset  
-- **Adapted for oil & gas:**  
-  Turbofan sensors mapped to rotating equipment (pumps, compressors)
-
-| Category | Examples |
-|----------|----------|
-| Operational settings | Temperature, pressure, fuel flow |
-| Sensor channels | Vibration, acoustic, torque, thermal readings |
-| Engine cycles | Operating hours (proxy for degradation) |
-
----
-
-# 📈 **7. Results Summary**
-
-### Key Insights:
-- Rolling statistics improved signal clarity  
-- XGBoost captured failure curves effectively  
-- Neural network captured non-linear wear patterns  
-- Ensemble delivered the most **stable** predictions across test samples
-
-📌 *This mirrors real-world predictive maintenance systems where ensemble models outperform single estimators.*
-
----
-
-# 🛠️ **8. Tech Stack**
-
-### **Languages & ML Tools**
-- Python, NumPy, pandas  
-- scikit-learn  
-- XGBoost  
-- TensorFlow / Keras  
-
-### **APIs & Deployment**
-- FastAPI  
-- Uvicorn  
-- Streamlit  
-
-### **Environment & MLOps**
-- Conda / virtual environments  
-- Git & GitHub  
-- Jupyter Notebooks  
-
----
-
-# 🌍 **9. How to Reproduce**
-
-### 1️⃣ Clone Repo  
-```bash
-git clone https://github.com/<your-username>/asset-integrity-predictive-maintenance.git
-cd asset-integrity-predictive-maintenance
-```
-
-### 2️⃣ Create Environment  
-```bash
-conda create -n tfenv python=3.11
-conda activate tfenv
+git clone https://github.com/mojh2088/forgeflow.git
+cd forgeflow
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3️⃣ Run Backend  
-```
-uvicorn rul_api:app --reload
-```
+Create a `.env` file in the repo root:
 
-### 4️⃣ Run Frontend  
 ```
-streamlit run scripts/streamlit_app.py
+BRONZE_BUCKET=<your-bronze-bucket-name>
+AWS_REGION=us-east-1
 ```
 
----
+Generate data (dry run first, to sanity-check locally before touching S3):
 
-# 🏭 **10. Industrial Applications**
+```bash
+python3 data_generator/generate_fabrication.py --jobs 40 --dry-run \
+  --out-dir datasets/forgeflow_fabrication/raw
 
-This system can be deployed across:
+python3 data_generator/generate_fabrication.py --jobs 40 \
+  --out-dir datasets/forgeflow_fabrication/raw
+```
 
-- Oil & gas rotating machinery  
-- Petrochemical pumps & compressors  
-- Refinery turbomachinery  
-- Offshore platform maintenance  
-- LNG plant reliability systems  
+Then run a Glue Crawler against `s3://<your-bronze-bucket>/forgeflow_fabrication/`
+to populate the Data Catalog, and query via Athena.
 
----
+## Results
 
-# 👤 **Author**
+- Bronze layer live: 40 jobs, ~190 material events, ~480 fabrication stage rows,
+  ~220 QC inspections, 40 delivery-variance rows.
+- Data-quality verified: uniqueness on all primary keys (`job_id`, `event_id`,
+  `inspection_id`) and referential integrity across all 5 tables, confirmed via Athena.
+- Silver/Gold dbt models: in progress.
 
-**Mohamed Jamaludeen Hussain**  
-Data Analytics Graduate Student | Asset Integrity Specialist | Oil & Gas Professional  
+## Build log
 
-📌 *Bridging 15+ years of industrial experience with machine learning innovation.*  
-📧 mojh2088@gmail.com  
-🔗 **LinkedIn:**  
-https://www.linkedin.com/in/mohamed-jamaludeen-hussain-shaik-munavar-hussain-9289a8a1/
+**Job ID collision bug (fixed).** An early Bronze generation run produced 44 project
+rows instead of the expected 40. Root cause: `job_id` was built from a loop counter local
+to a single script invocation, with no memory of prior runs — and the local write function
+appended rather than overwrote, so an earlier `--dry-run` test's output silently sat
+underneath a later real run's output in the same partition files. Two runs, same counter
+range, colliding IDs on two jobs. Fixed by making `job_id` globally unique (uuid suffix)
+and making writes overwrite-on-first-touch per run. Verified clean across all 5 tables
+afterward — zero collisions, zero orphaned foreign keys.
 
+## Anonymization
 
----
-
-# ⭐ **If you found this project valuable, please star the repository!**
+No client names, real project identifiers, or proprietary data appear in this repo.
+All data is synthetically generated. Division names (PED/SSD), stage sequences, and
+code standards (ASME, API, AISC) reflect general industry practice, not any specific
+employer's internal processes.
