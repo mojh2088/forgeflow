@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: stg_projects
+    description: One row per job. Job master, typed and deduplicated on job_id.
+    columns:
+      - name: job_id
+        tests:
+          - unique
+          - not_null
+      - name: division
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['PED', 'SSD']
+
+  - name: stg_material_tracking
+    description: One row per material event. Typed and deduplicated on event_id.
+    columns:
+      - name: event_id
+        tests:
+          - unique
+          - not_null
+      - name: job_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_projects')
+                field: job_id
+
+  - name: stg_fabrication_stages
+    description: One row per fabrication stage event. Typed and deduplicated on event_id.
+    columns:
+      - name: event_id
+        tests:
+          - unique
+          - not_null
+      - name: job_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_projects')
+                field: job_id
+
+  - name: stg_qc_inspections
+    description: One row per QC inspection. Typed and deduplicated on inspection_id.
+    columns:
+      - name: inspection_id
+        tests:
+          - unique
+          - not_null
+      - name: job_id
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_projects')
+                field: job_id
+      - name: result
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['PASS', 'FAIL', 'HOLD']
+
+  - name: stg_delivery_variance
+    description: One row per job. Planned vs actual ship date and delay reason.
+    columns:
+      - name: job_id
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_projects')
+                field: job_id

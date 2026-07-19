@@ -1,0 +1,36 @@
+version: 2
+
+sources:
+  - name: forgeflow_bronze
+    database: awsdatacatalog
+    schema: forgeflow_catalog
+    description: >
+      Raw job-based fabrication data, written by the Python generator and
+      crawled by the Glue crawler. One row per event/record as emitted by
+      the generator — untyped (strings from JSON), not deduplicated.
+    tables:
+      - name: projects
+        description: Job master. One row per job.
+        columns:
+          - name: job_id
+            description: Primary key. Format {division}-{year}-{seq}-{uuid suffix}.
+      - name: material_tracking
+        description: PO issued -> transit -> received -> issued-to-fab events per job.
+        columns:
+          - name: event_id
+            description: Primary key.
+      - name: fabrication_stages
+        description: Stage-by-stage planned/actual dates per job.
+        columns:
+          - name: event_id
+            description: Primary key.
+      - name: qc_inspections
+        description: Inspection events gated to specific fabrication stages.
+        columns:
+          - name: inspection_id
+            description: Primary key.
+      - name: delivery_variance
+        description: One row per job, planned vs actual ship date and delay reason.
+        columns:
+          - name: job_id
+            description: Primary key.

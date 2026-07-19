@@ -1,0 +1,27 @@
+name: 'forgeflow'
+version: '1.0.0'
+config-version: 2
+
+profile: 'forgeflow'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  forgeflow:
+    silver:
+      +materialized: table
+      +schema: forgeflow_silver
+      +s3_data_dir: "s3://forgeflow-silver-711266489387/"
+      +s3_data_naming: schema_table
+    gold:
+      +materialized: table
+      +schema: forgeflow_gold
+      +s3_data_dir: "s3://forgeflow-gold-711266489387/"
+      +s3_data_naming: schema_table
